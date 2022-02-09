@@ -5,6 +5,7 @@
 #include <webots/camera.hpp>
 #include <webots/Display.hpp>
 #include <math.h>
+#include <stdio.h>
 #include <opencv2/core/core.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
@@ -23,6 +24,7 @@
 
 using namespace webots;
 using namespace std;
+using namespace cv;
 
 ////////////////////////////////////STAGES////////////////////////////////////////////////////
 
@@ -53,7 +55,7 @@ bool dsDigitalValue[7];
 double dsValue[7];
 double snValue[3];
 bool snDigitalValue[3];
-double kp; double ki; double kd; double error; double previousError; double accumulateError;
+double kp; double ki; double kd; double errorPID; double previousError; double accumulateError;
 double PValue; double IValue; double DValue; double correction;
 double rightVelocity; double leftVelocity;
 int PIDcoefficient[7] = {-3, -2, -1, 0, 1, 2, 3};
@@ -141,18 +143,18 @@ void initialize_PID(){
 
 void follow_line(){
   read_ds();
-  error = 0;
+  errorPID = 0;
   for (int i = 0; i < 7; i++){
-    error += dsDigitalValue[i] * PIDcoefficient[i];
+    errorPID += dsDigitalValue[i] * PIDcoefficient[i];
   }
-  //cout << error << endl;
+  //cout << errorPID << endl;
   
-  PValue = kp * error;
-  IValue = ki * (accumulateError + error);
-  DValue = kd * (error - previousError);
+  PValue = kp * errorPID;
+  IValue = ki * (accumulateError + errorPID);
+  DValue = kd * (errorPID - previousError);
 
-  previousError = error;
-  accumulateError += error;
+  previousError = errorPID;
+  accumulateError += errorPID;
 
   correction = (PValue + IValue + DValue);
   rightVelocity = SPEED - correction; leftVelocity = SPEED + correction;
@@ -223,20 +225,20 @@ void initialize_wall_PID(){
 
 void follow_wall(){
   sn_digital_value();
-  error = 0;
-  error = (WALL_TRESHOLD - snValue[LEFT]);
+  errorPID = 0;
+  errorPID = (WALL_TRESHOLD - snValue[LEFT]);
 
   // if (snDigitalValue[RIGHT]){
-  //   error += (snValue[LEFT] - WALL_TRESHOLD);
+  //   errorPID += (snValue[LEFT] - WALL_TRESHOLD);
   // }
-  // error /=2;
+  // errorPID /=2;
 
-  PValue = kp * error;
-  IValue = ki * (accumulateError + error);
-  DValue = kd * (error - previousError);
+  PValue = kp * errorPID;
+  IValue = ki * (accumulateError + errorPID);
+  DValue = kd * (errorPID - previousError);
 
-  previousError = error;
-  accumulateError += error;
+  previousError = errorPID;
+  accumulateError += errorPID;
   //cout << snValue[LEFT] << endl;
   correction = (PValue + IValue + DValue)/1000;
   rightVelocity = SPEED + correction; leftVelocity = SPEED - correction;
@@ -326,10 +328,17 @@ void initialize_camera(){
   height = camera->getHeight();
 }
 
-void display_image(const unsigned char *image){
-      ImageRef *ir = display->imageNew(width, height, image, Display::BGRA);
+void display_image(Mat img){
+      ImageRef *ir = display->imageNew(width, height, img.data, Display::BGRA);
       display->imagePaste(ir, 0, 0, false);
       display->imageDelete(ir);
+}
+
+Mat get_image(){
+  const unsigned char *image = camera->getImage();
+  Mat img = Mat(Size(width, height), CV_8UC4);
+  img.data = (uchar *)image;
+  return img;
 }
 ///////////////////////////////////MAIN/////////////////////////////////////////////////////////
 
@@ -361,10 +370,13 @@ int main(int argc, char **argv) {
     //   break;
     
     // }
-    image = camera->getImage();
-    display_image(image);
-    set_velocity(SPEED,SPEED);
-  
+    
+    // display_image(image);
+    // set_velocity(SPEED,SPEED);
+    Mat imageProc;
+    GaussianBlur(get_image(), imageProc, Size(9, 9), 0);
+    display_image(imageProc);
+
   
 
   };
