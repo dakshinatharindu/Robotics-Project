@@ -26,12 +26,12 @@ using namespace std;
 
 ////////////////////////////////////STAGES////////////////////////////////////////////////////
 
-enum Stages
-    {
-        LINE_FOLLOW,
-        WALL_FOLLOW
-    };
-Stages currentStage = LINE_FOLLOW;
+// enum Stages
+//     {
+//         LINE_FOLLOW,
+//         WALL_FOLLOW
+//     };
+// Stages currentStage = LINE_FOLLOW;
 
 
 ////////////////////////////////////DEFINE OBJECTS////////////////////////////////////////////////////
@@ -326,10 +326,10 @@ void initialize_camera(){
   height = camera->getHeight();
 }
 
-void display_image(){
-      //ImageRef *ir = display->imageNew(width, height, data, Display::ARGB);
-      // display->imagePaste(ir, 0, 0, false);
-      // display->imageDelete(ir);
+void display_image(const unsigned char *image){
+      ImageRef *ir = display->imageNew(width, height, image, Display::BGRA);
+      display->imagePaste(ir, 0, 0, false);
+      display->imageDelete(ir);
 }
 ///////////////////////////////////MAIN/////////////////////////////////////////////////////////
 
@@ -344,24 +344,26 @@ int main(int argc, char **argv) {
 
   while (robot->step(TIME_STEP) != -1) {
     
-    switch (currentStage)
-    {
-    case LINE_FOLLOW:
-      follow_line();
-      sn_digital_value();
-      if (snDigitalValue[LEFT]){
-        currentStage = WALL_FOLLOW;
-        initialize_wall_PID();
-      }
-      break;
+    // switch (currentStage)
+    // {
+    // case LINE_FOLLOW:
+    //   follow_line();
+    //   sn_digital_value();
+    //   if (snDigitalValue[LEFT]){
+    //     currentStage = WALL_FOLLOW;
+    //     initialize_wall_PID();
+    //   }
+    //   break;
     
-    case WALL_FOLLOW:
+    // case WALL_FOLLOW:
       
-      follow_maze();
-      break;
+    //   follow_maze();
+    //   break;
     
-    }
-    //image = camera->getImage();
+    // }
+    image = camera->getImage();
+    display_image(image);
+    set_velocity(SPEED,SPEED);
   
   
 
