@@ -28,12 +28,12 @@ using namespace cv;
 
 ////////////////////////////////////STAGES////////////////////////////////////////////////////
 
-// enum Stages
-//     {
-//         LINE_FOLLOW,
-//         WALL_FOLLOW
-//     };
-// Stages currentStage = LINE_FOLLOW;
+enum Stages
+    {
+        LINE_FOLLOW,
+        WALL_FOLLOW
+    };
+Stages currentStage = LINE_FOLLOW;
 
 
 ////////////////////////////////////DEFINE OBJECTS////////////////////////////////////////////////////
@@ -353,26 +353,24 @@ int main(int argc, char **argv) {
 
   while (robot->step(TIME_STEP) != -1) {
     
-    // switch (currentStage)
-    // {
-    // case LINE_FOLLOW:
-    //   follow_line();
-    //   sn_digital_value();
-    //   if (snDigitalValue[LEFT]){
-    //     currentStage = WALL_FOLLOW;
-    //     initialize_wall_PID();
-    //   }
-    //   break;
+    switch (currentStage)
+    {
+    case LINE_FOLLOW:
+      follow_line();
+      sn_digital_value();
+      if (snDigitalValue[LEFT]){
+        currentStage = WALL_FOLLOW;
+        initialize_wall_PID();
+      }
+      break;
     
-    // case WALL_FOLLOW:
+    case WALL_FOLLOW:
       
-    //   follow_maze();
-    //   break;
+      follow_maze();
+      break;
     
-    // }
+    }
     
-    // display_image(image);
-    // set_velocity(SPEED,SPEED);
     Mat imageProc;
     GaussianBlur(get_image(), imageProc, Size(9, 9), 0);
     display_image(imageProc);
