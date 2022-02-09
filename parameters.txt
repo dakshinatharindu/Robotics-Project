@@ -1,0 +1,7 @@
+robot = 500g
+wheel = 20g
+gripperBase = 5g
+caster = 1g
+
+wheel_size = 26mm radius
+botom_point = -19.75mm
