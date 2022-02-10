@@ -21,6 +21,9 @@
 #define RIGHT 1
 #define LEFT 2
 #define CELL_WIDTH 10
+#define WIDTH 64
+#define HEIGHT 64
+#define CYAN 0
 
 using namespace webots;
 using namespace std;
@@ -28,12 +31,12 @@ using namespace cv;
 
 ////////////////////////////////////STAGES////////////////////////////////////////////////////
 
-enum Stages
-    {
-        LINE_FOLLOW,
-        WALL_FOLLOW
-    };
-Stages currentStage = LINE_FOLLOW;
+// enum Stages
+//     {
+//         LINE_FOLLOW,
+//         WALL_FOLLOW
+//     };
+// Stages currentStage = LINE_FOLLOW;
 
 
 ////////////////////////////////////DEFINE OBJECTS////////////////////////////////////////////////////
@@ -48,6 +51,8 @@ Camera *camera;
 Display *display;
 
 
+
+
 ///////////////////////////////////DEFINE VARIABLES////////////////////////////////////////////////////
 double psValue[2];
 char dsName[10][5] =  {"ir_1", "ir_2", "ir_3", "ir_4", "ir_5", "ir_6", "ir_7", "sn_f", "sn_r", "sn_l"};
@@ -60,9 +65,9 @@ double PValue; double IValue; double DValue; double correction;
 double rightVelocity; double leftVelocity;
 int PIDcoefficient[7] = {-3, -2, -1, 0, 1, 2, 3};
 double servoValue;
-int width;
-int height;
-const unsigned char *image;
+Mat frame, frame_HSV, frame_threshold, frameBGR;
+
+
 
 
 ///////////////////////////////////WHEEL MOTORS/////////////////////////////////////////////////////////
@@ -324,21 +329,32 @@ void initialize_camera(){
   camera = robot->getCamera("camera");
   camera->enable(TIME_STEP);
   display = robot->getDisplay("display");
-  width = camera->getWidth();
-  height = camera->getHeight();
 }
 
 void display_image(Mat img){
-      ImageRef *ir = display->imageNew(width, height, img.data, Display::BGRA);
+      Mat im;
+      cvtColor(img, im, COLOR_BGR2BGRA);
+      ImageRef *ir = display->imageNew(WIDTH, HEIGHT, im.data, Display::BGRA);
       display->imagePaste(ir, 0, 0, false);
       display->imageDelete(ir);
 }
 
 Mat get_image(){
+  Mat im;
   const unsigned char *image = camera->getImage();
-  Mat img = Mat(Size(width, height), CV_8UC4);
+  Mat img = Mat(Size(WIDTH, HEIGHT), CV_8UC4);
   img.data = (uchar *)image;
-  return img;
+  cvtColor(img, im, COLOR_BGRA2BGR);
+  return im;
+}
+
+Mat get_mask(Mat im, int color){
+    cvtColor(im, frame_HSV, COLOR_BGR2HSV);
+    if (color == CYAN){
+      inRange(frame_HSV, Scalar(80, 50, 50), Scalar(100, 255, 255), frame_threshold);
+    }
+    cvtColor(frame_threshold, frameBGR, COLOR_GRAY2BGR);
+    return frameBGR;
 }
 ///////////////////////////////////MAIN/////////////////////////////////////////////////////////
 
@@ -353,28 +369,55 @@ int main(int argc, char **argv) {
 
   while (robot->step(TIME_STEP) != -1) {
     
-    switch (currentStage)
-    {
-    case LINE_FOLLOW:
-      follow_line();
-      sn_digital_value();
-      if (snDigitalValue[LEFT]){
-        currentStage = WALL_FOLLOW;
-        initialize_wall_PID();
-      }
-      break;
+    // switch (currentStage)
+    // {
+    // case LINE_FOLLOW:
+    //   follow_line();
+    //   sn_digital_value();
+    //   if (snDigitalValue[LEFT]){
+    //     currentStage = WALL_FOLLOW;
+    //     initialize_wall_PID();
+    //   }
+    //   break;
     
-    case WALL_FOLLOW:
+    // case WALL_FOLLOW:
       
-      follow_maze();
-      break;
+    //   follow_maze();
+    //   break;
     
-    }
-    
-    Mat imageProc;
-    GaussianBlur(get_image(), imageProc, Size(9, 9), 0);
-    display_image(imageProc);
+    // }
+    Mat out = get_mask(get_image(), CYAN);
+    // Mat zero = Mat::zeros( Size(WIDTH, HEIGHT), CV_8UC3);
 
+    // Mat output;
+
+    // bitwise_or(out, zero,);
+    // cout << output << endl;
+
+    vector<vector<Point> > contours;
+    vector<Vec4i> hierarchy;
+    findContours( out, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE );
+
+    
+    // vector<Moments> mu(contours.size() );
+    // for( size_t i = 0; i < contours.size(); i++ )
+    // {
+    //     mu[i] = moments( contours[i] );
+    // }
+    // vector<Point2f> mc( contours.size() );
+    // for( size_t i = 0; i < contours.size(); i++ )
+    // {
+    //     //add 1e-5 to avoid division by zero
+    //     mc[i] = Point2f( static_cast<float>(mu[i].m10 / (mu[i].m00 + 1e-5)),
+    //                      static_cast<float>(mu[i].m01 / (mu[i].m00 + 1e-5)) );
+    //     cout << "mc[" << i << "]=" << mc[i] << endl;
+    // }
+
+
+
+
+
+  //cout << frameBGR << endl;
   
 
   };
