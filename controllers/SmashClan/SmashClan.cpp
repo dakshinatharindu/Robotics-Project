@@ -21,9 +21,10 @@
 #define RIGHT 1
 #define LEFT 2
 #define CELL_WIDTH 10
-#define WIDTH 64
-#define HEIGHT 64
+#define WIDTH 640
+#define HEIGHT 640
 #define CYAN 0
+#define OBJ 1
 
 using namespace webots;
 using namespace std;
@@ -353,9 +354,27 @@ Mat get_mask(Mat im, int color){
     if (color == CYAN){
       inRange(frame_HSV, Scalar(80, 50, 50), Scalar(100, 255, 255), frame_threshold);
     }
-    cvtColor(frame_threshold, frameBGR, COLOR_GRAY2BGR);
-    return frameBGR;
+    if (color == OBJ)
+    {
+      inRange(frame_HSV, Scalar(20, 50, 50), Scalar(25, 255, 255), frame_threshold);
+    }
+    
+    //cvtColor(frame_threshold, frameBGR, COLOR_GRAY2BGR);
+    return frame_threshold;
 }
+
+int getMaxAreaContourId(vector <vector<Point>> contours) {
+    double maxArea = 0;
+    int maxAreaContourId = -1;
+    for (long long unsigned int j = 0; j < contours.size(); j++) {
+        double newArea = contourArea(contours.at(j));
+        if (newArea > maxArea) {
+            maxArea = newArea;
+            maxAreaContourId = j;
+        }
+    }
+    return maxAreaContourId;
+} 
 ///////////////////////////////////MAIN/////////////////////////////////////////////////////////
 
 int main(int argc, char **argv) {
@@ -386,38 +405,43 @@ int main(int argc, char **argv) {
     //   break;
     
     // }
-    Mat out = get_mask(get_image(), CYAN);
+    Mat frame = get_image();
+
+    Mat out = get_mask(frame, OBJ);
+    //cout << out.channels() << endl;
     // Mat zero = Mat::zeros( Size(WIDTH, HEIGHT), CV_8UC3);
 
     // Mat output;
 
-    // bitwise_or(out, zero,);
+    // bitwise_or(out, zero);
     // cout << output << endl;
 
     vector<vector<Point> > contours;
     vector<Vec4i> hierarchy;
-    findContours( out, contours, hierarchy, RETR_TREE, CHAIN_APPROX_SIMPLE );
+    findContours( out, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE );
 
     
-    // vector<Moments> mu(contours.size() );
-    // for( size_t i = 0; i < contours.size(); i++ )
-    // {
-    //     mu[i] = moments( contours[i] );
-    // }
-    // vector<Point2f> mc( contours.size() );
-    // for( size_t i = 0; i < contours.size(); i++ )
-    // {
-    //     //add 1e-5 to avoid division by zero
-    //     mc[i] = Point2f( static_cast<float>(mu[i].m10 / (mu[i].m00 + 1e-5)),
-    //                      static_cast<float>(mu[i].m01 / (mu[i].m00 + 1e-5)) );
-    //     cout << "mc[" << i << "]=" << mc[i] << endl;
-    // }
+    vector<Moments> mu(contours.size() );
+    for( size_t i = 0; i < contours.size(); i++ )
+    {
+        mu[i] = moments( contours[i] );
+    }
+    vector<Point2f> mc( contours.size() );
+    for( size_t i = 0; i < contours.size(); i++ )
+    {
+        //add 1e-5 to avoid division by zero
+        mc[i] = Point2f( static_cast<float>(mu[i].m10 / (mu[i].m00 + 1e-5)),
+                         static_cast<float>(mu[i].m01 / (mu[i].m00 + 1e-5)) );
+        //cout << "mc[" << i << "]=" << mc[i] << endl;
+    }
+
+    cvtColor(out, frameBGR, COLOR_GRAY2BGR);
+    display_image(frameBGR);
 
 
 
 
-
-  //cout << frameBGR << endl;
+  cout << contours[getMaxAreaContourId(contours)].size() << endl;
   
 
   };
