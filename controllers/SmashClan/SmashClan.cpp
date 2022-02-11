@@ -25,6 +25,7 @@
 #define HEIGHT 640
 #define CYAN 0
 #define OBJ 1
+#define YELLOW 2
 
 using namespace webots;
 using namespace std;
@@ -38,6 +39,15 @@ using namespace cv;
 //         WALL_FOLLOW
 //     };
 // Stages currentStage = LINE_FOLLOW;
+
+////////////////////////////////////MOSAIC SUB-STAGES////////////////////////////////////////////////////
+
+enum Mosaic
+    {
+        FIND_CYAN,
+        CUBE
+    };
+Mosaic currentMosaic = FIND_CYAN;
 
 
 ////////////////////////////////////DEFINE OBJECTS////////////////////////////////////////////////////
@@ -356,25 +366,100 @@ Mat get_mask(Mat im, int color){
     }
     if (color == OBJ)
     {
-      inRange(frame_HSV, Scalar(20, 50, 50), Scalar(25, 255, 255), frame_threshold);
+      inRange(frame_HSV, Scalar(22, 50, 50), Scalar(25, 255, 255), frame_threshold);
+    }
+    if (color == YELLOW)
+    {
+      inRange(frame_HSV, Scalar(27, 50, 50), Scalar(35, 255, 255), frame_threshold);
     }
     
     //cvtColor(frame_threshold, frameBGR, COLOR_GRAY2BGR);
     return frame_threshold;
 }
 
-int getMaxAreaContourId(vector <vector<Point>> contours) {
-    double maxArea = 0;
-    int maxAreaContourId = -1;
-    for (long long unsigned int j = 0; j < contours.size(); j++) {
-        double newArea = contourArea(contours.at(j));
-        if (newArea > maxArea) {
-            maxArea = newArea;
-            maxAreaContourId = j;
-        }
+bool compareContourAreas (vector<Point> contour1, vector<Point> contour2) {
+    double i = fabs(contourArea(Mat(contour1)) );
+    double j = fabs(contourArea(Mat(contour2)) );
+    return (i > j );
+}
+
+vector<vector<Point>> get_contours(Mat mask){
+    vector<vector<Point> > contours;
+    vector<Vec4i> hierarchy;
+    findContours(mask, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE );
+    sort(contours.begin(), contours.end(), compareContourAreas);
+    return contours;
+}
+
+Point2f get_centroid(vector<Point> contour){
+  Point2f mc;
+  Moments mu;
+  mu = moments( contour);      
+  mc = Point2f( static_cast<float>(mu.m10 / (mu.m00 + 1e-5)), static_cast<float>(mu.m01 / (mu.m00 + 1e-5))); 
+  //cout <<  mc.x << endl;
+  return mc;
+}
+
+void find_floor(int color){
+  Mat frame = get_image();
+  Mat out = get_mask(frame, color);
+  vector<vector<Point>> contours = get_contours(out);
+  
+  if (contours.size() == 0){
+    set_velocity(TURN_SPEED, -TURN_SPEED);
+  }
+  else{
+    double x = get_centroid(contours[0]).x;
+    if ( (x < 250) || (x > 340)){
+      set_velocity(TURN_SPEED, -TURN_SPEED);
     }
-    return maxAreaContourId;
-} 
+    else{
+      double y = get_centroid(contours[0]).y;
+      //cout << y << endl;
+      if ( y < 300){
+        set_velocity(TURN_SPEED, TURN_SPEED);
+      }
+      else{
+      set_velocity(0, 0);
+      if (currentMosaic == FIND_CYAN){
+        currentMosaic = CUBE;
+      }
+      }
+    }
+  }
+  cvtColor(out, frameBGR, COLOR_GRAY2BGR);
+  display_image(frameBGR);
+}
+
+void follow_contour(vector<Point> contour){
+  double x = get_centroid(contour).x;
+}
+
+void find_object(){
+  Mat frame = get_image();
+    Mat out = get_mask(frame, OBJ);
+    vector<vector<Point>> contours = get_contours(out);
+    vector<Point> approx;
+    approxPolyDP(contours[0], approx, arcLength(contours[0], true)*0.02, true);
+}
+
+void mosaic_area(){
+  switch (currentMosaic)
+    {
+    case FIND_CYAN:
+      find_floor(CYAN);
+      break;
+    
+    case CUBE:
+
+
+
+
+      break;
+    
+    
+    }
+}
 ///////////////////////////////////MAIN/////////////////////////////////////////////////////////
 
 int main(int argc, char **argv) {
@@ -405,43 +490,14 @@ int main(int argc, char **argv) {
     //   break;
     
     // }
-    Mat frame = get_image();
-
-    Mat out = get_mask(frame, OBJ);
-    //cout << out.channels() << endl;
-    // Mat zero = Mat::zeros( Size(WIDTH, HEIGHT), CV_8UC3);
-
-    // Mat output;
-
-    // bitwise_or(out, zero);
-    // cout << output << endl;
-
-    vector<vector<Point> > contours;
-    vector<Vec4i> hierarchy;
-    findContours( out, contours, hierarchy, RETR_EXTERNAL, CHAIN_APPROX_SIMPLE );
+    //find_floor(CYAN);
+    mosaic_area();
+    
+    
+    // cout << approx.size() << endl;
+    
 
     
-    vector<Moments> mu(contours.size() );
-    for( size_t i = 0; i < contours.size(); i++ )
-    {
-        mu[i] = moments( contours[i] );
-    }
-    vector<Point2f> mc( contours.size() );
-    for( size_t i = 0; i < contours.size(); i++ )
-    {
-        //add 1e-5 to avoid division by zero
-        mc[i] = Point2f( static_cast<float>(mu[i].m10 / (mu[i].m00 + 1e-5)),
-                         static_cast<float>(mu[i].m01 / (mu[i].m00 + 1e-5)) );
-        //cout << "mc[" << i << "]=" << mc[i] << endl;
-    }
-
-    cvtColor(out, frameBGR, COLOR_GRAY2BGR);
-    display_image(frameBGR);
-
-
-
-
-  cout << contours[getMaxAreaContourId(contours)].size() << endl;
   
 
   };
