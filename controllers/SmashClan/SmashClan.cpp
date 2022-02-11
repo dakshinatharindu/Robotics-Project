@@ -14,9 +14,10 @@
 #define LINE_TROSHOLD 446
 #define WALL_TRESHOLD 690
 #define DELTA 0.1
-#define SPEED 7
+#define SPEED 5
 #define TURN90 5.45
 #define TURN_SPEED 2
+#define MOSAIC_SPEED 3
 #define FRONT 0
 #define RIGHT 1
 #define LEFT 2
@@ -45,7 +46,7 @@ using namespace cv;
 enum Mosaic
     {
         FIND_CYAN,
-        CUBE
+        GOTO_CUBE
     };
 Mosaic currentMosaic = FIND_CYAN;
 
@@ -55,9 +56,13 @@ Robot *robot;
 Motor *right_motor;
 Motor *left_motor;
 Motor *servo;
+Motor *right_linear;
+Motor *left_linear;
 DistanceSensor *ds[10];
 PositionSensor *ps[3];
 PositionSensor *servoEncoder;
+PositionSensor *rightLinearEncoder;
+PositionSensor *leftLinearEncoder;
 Camera *camera;
 Display *display;
 
@@ -76,6 +81,8 @@ double PValue; double IValue; double DValue; double correction;
 double rightVelocity; double leftVelocity;
 int PIDcoefficient[7] = {-3, -2, -1, 0, 1, 2, 3};
 double servoValue;
+double rightLinearValue;
+double leftLinearValue;
 Mat frame, frame_HSV, frame_threshold, frameBGR;
 
 
@@ -308,18 +315,26 @@ void initialize_servo(){
     servo = robot->getMotor("servo");
     servoEncoder = robot->getPositionSensor("servo_en");
     servoEncoder->enable(TIME_STEP);
+
+    right_linear = robot->getMotor("r_linear");
+    rightLinearEncoder = robot->getPositionSensor("r_linear_en");
+    rightLinearEncoder->enable(TIME_STEP);
+
+    left_linear = robot->getMotor("l_linear");
+    leftLinearEncoder = robot->getPositionSensor("l_linear_en");
+    leftLinearEncoder->enable(TIME_STEP);
 }
 
 void pull_down(){
   servo->setControlPID(2, 0, 0);
   servo->setVelocity(1);
-  servo->setPosition(-0.57);
+  servo->setPosition(-0.53);
   double currentPosition;
   do
   { 
     currentPosition = servoEncoder->getValue();
     robot->step(TIME_STEP);
-  } while (fabs(currentPosition + 0.57 ) > DELTA);
+  } while (fabs(currentPosition + 0.53 ) > DELTA);
   
 }
 
@@ -333,6 +348,42 @@ void pull_up(){
     currentPosition = servoEncoder->getValue();
     robot->step(TIME_STEP);
   } while (fabs(currentPosition - 1 ) > DELTA);
+}
+
+void open_grabber(){
+  right_linear->setControlPID(2, 0, 0);
+  right_linear->setPosition(0.02);
+
+  left_linear->setControlPID(2, 0, 0);
+  left_linear->setPosition(-0.02);
+  double currentPosition;
+  do
+  { 
+    currentPosition = rightLinearEncoder->getValue();
+    robot->step(TIME_STEP);
+    //cout << currentPosition << endl;
+  } while (fabs(currentPosition - 0.02 ) > 0.001);
+}
+
+void close_grabber(){
+  right_linear->setControlPID(2, 0, 0);
+  right_linear->setPosition(-0.02);
+  //right_linear->setForce(-0.05);
+
+  left_linear->setControlPID(2, 0, 0);
+  left_linear->setPosition(0.02);
+  //left_linear->setForce(0.05);
+
+  for (int i = 0; i < 15; i++){
+    robot->step(TIME_STEP);
+  }
+//   double currentPosition;
+//   do
+//   { 
+//     currentPosition = rightLinearEncoder->getValue();
+//     robot->step(TIME_STEP);
+//     //cout << currentPosition << endl;
+//   } while (fabs(currentPosition + 0.02 ) > 0.001);
 }
 
 ///////////////////////////////////CAMERA/////////////////////////////////////////////////////////
@@ -366,7 +417,7 @@ Mat get_mask(Mat im, int color){
     }
     if (color == OBJ)
     {
-      inRange(frame_HSV, Scalar(22, 50, 50), Scalar(25, 255, 255), frame_threshold);
+      inRange(frame_HSV, Scalar(20, 50, 50), Scalar(25, 255, 255), frame_threshold);
     }
     if (color == YELLOW)
     {
@@ -406,23 +457,23 @@ void find_floor(int color){
   vector<vector<Point>> contours = get_contours(out);
   
   if (contours.size() == 0){
-    set_velocity(TURN_SPEED, -TURN_SPEED);
+    set_velocity(MOSAIC_SPEED, -MOSAIC_SPEED);
   }
   else{
     double x = get_centroid(contours[0]).x;
-    if ( (x < 250) || (x > 340)){
-      set_velocity(TURN_SPEED, -TURN_SPEED);
+    if ( (x < 250) || (x > 440)){
+      set_velocity(MOSAIC_SPEED, -MOSAIC_SPEED);
     }
     else{
       double y = get_centroid(contours[0]).y;
       //cout << y << endl;
-      if ( y < 300){
-        set_velocity(TURN_SPEED, TURN_SPEED);
+      if ( y < 250){
+        set_velocity(MOSAIC_SPEED, MOSAIC_SPEED);
       }
       else{
       set_velocity(0, 0);
       if (currentMosaic == FIND_CYAN){
-        currentMosaic = CUBE;
+        currentMosaic = GOTO_CUBE;
       }
       }
     }
@@ -433,14 +484,47 @@ void find_floor(int color){
 
 void follow_contour(vector<Point> contour){
   double x = get_centroid(contour).x;
+  double y = get_centroid(contour).y;
+  if (y < 600){
+    if (x < 300){
+      set_velocity(MOSAIC_SPEED, -MOSAIC_SPEED);
+    }
+    else if (x > 340){
+      set_velocity(-MOSAIC_SPEED, MOSAIC_SPEED);
+    }
+    else{
+      set_velocity(MOSAIC_SPEED, MOSAIC_SPEED);
+    }
+  }
+  else{
+    set_velocity(0, 0);
+  }
 }
 
 void find_object(){
-  Mat frame = get_image();
+    Mat frame = get_image();
     Mat out = get_mask(frame, OBJ);
     vector<vector<Point>> contours = get_contours(out);
     vector<Point> approx;
-    approxPolyDP(contours[0], approx, arcLength(contours[0], true)*0.02, true);
+    for (size_t i = 0; i < contours.size(); i++){
+      if ( i == 2){break;}
+      approxPolyDP(contours[i], approx, arcLength(contours[i], true)*0.005, true);
+      cout << approx.size() << endl;
+      if ((approx.size() <= 7) && (currentMosaic == GOTO_CUBE)){
+        follow_contour(contours[i]);
+      }
+      
+    }
+    cvtColor(out, frameBGR, COLOR_GRAY2BGR);
+  display_image(frameBGR);
+}
+
+void sweap(){
+  for (int i = 0 ; i < 100; i++){
+    set_velocity(1, 1);
+    robot->step(TIME_STEP);
+  }
+  set_velocity(0, 0);
 }
 
 void mosaic_area(){
@@ -450,11 +534,8 @@ void mosaic_area(){
       find_floor(CYAN);
       break;
     
-    case CUBE:
-
-
-
-
+    case GOTO_CUBE:
+      find_object();
       break;
     
     
@@ -469,7 +550,7 @@ int main(int argc, char **argv) {
       initialize_encoders();
       initialize_servo();
       initialize_camera();
-      
+      int t = 1;
 
   while (robot->step(TIME_STEP) != -1) {
     
@@ -488,13 +569,23 @@ int main(int argc, char **argv) {
       
     //   follow_maze();
     //   break;
+    if (t){
+    open_grabber();
+    pull_down();
+    sweap();
+    close_grabber();
     
+    pull_up();
+    
+    t = 0;
+    }
+    set_velocity(3, 3);
     // }
     //find_floor(CYAN);
-    mosaic_area();
+    //mosaic_area();
     
     
-    // cout << approx.size() << endl;
+    cout << "HI" << endl;
     
 
     
