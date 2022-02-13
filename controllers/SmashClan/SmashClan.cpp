@@ -23,6 +23,7 @@
 #define LEFT 2
 #define CELL_WIDTH 10
 #define OBJ_CLOSE 0.003
+#define BALL_CLOSE 0.005
 #define CMPL_CLOSE 0.022
 #define WIDTH 640
 #define HEIGHT 640
@@ -31,6 +32,9 @@
 #define YELLOW 2
 #define MAGENTA 3
 #define WHITE 4
+#define RED 5
+#define BLUE 6
+#define BALL BLUE
 
 using namespace webots;
 using namespace std;
@@ -42,9 +46,10 @@ enum Stages
     {
         LINE_FOLLOW,
         WALL_FOLLOW,
-        MOSAIC_AREA
+        MOSAIC_AREA,
+        DASH_LINE
     };
-Stages currentStage = MOSAIC_AREA;
+Stages currentStage = LINE_FOLLOW;
 
 // ////////////////////////////////////MOSAIC SUB-STAGES////////////////////////////////////////////////////
 
@@ -60,7 +65,11 @@ enum Mosaic
         GOTO_CYLINDER,
         FIND_MAGENTA_CY,
         FIND_YELLOW_CY,
-        FIND_RING
+        FIND_RING,
+        FIND_MAGENTA_P,
+        FIND_BALL,
+        FIND_MAGENTA_P2,
+        FIND_RING_P
         
     };
 Mosaic currentMosaic = FIND_CYAN;
@@ -411,11 +420,15 @@ void sweap(double x){
   get_encoder_value();
   double rightTarget = psValue[0] + x;
   double leftTarget = psValue[1] + x;
+  double velo = SPEED;
+  if ((currentMosaic == GOTO_CUBE) || (currentMosaic == GOTO_CYLINDER) || (currentMosaic == FIND_BALL) || (currentMosaic == FIND_SQUARE) || (currentMosaic == FIND_RING)){
+    velo = 2;
+  }
   if (x > 0){
-    set_velocity(2, 2);
+    set_velocity(velo, velo);
   }
   else {
-    set_velocity(-2, -2);
+    set_velocity(-velo, -velo);
   }
   
   
@@ -431,6 +444,15 @@ void pick_object(){
     pull_down();
     sweap(4.5);
     close_grabber(OBJ_CLOSE);
+    pull_up();
+    //set_velocity(3, 3);
+}
+
+void pick_ball(){
+    open_grabber();
+    pull_down();
+    sweap(4.5);
+    close_grabber(BALL_CLOSE);
     pull_up();
     //set_velocity(3, 3);
 }
@@ -484,13 +506,23 @@ Mat get_mask(Mat im, int color){
     }
     else if (color == MAGENTA)
     { cvtColor(im, frame_HSV, COLOR_BGR2HSV);
-      inRange(frame_HSV, Scalar(145, 50, 50), Scalar(155, 255, 255), frame_threshold);
+      inRange(frame_HSV, Scalar(135, 50, 50), Scalar(155, 255, 255), frame_threshold);
     }
     else if (color == WHITE)
     { cvtColor(im, frame_HSV, COLOR_BGR2HLS);
       inRange(frame_HSV, Scalar(0, 120,0), Scalar(179, 255, 255), frame_threshold);
     }
-    
+    else if (color == RED)
+    { Mat mask1, mask2;
+      cvtColor(im, frame_HSV, COLOR_BGR2HSV);
+      inRange(frame_HSV, Scalar(0, 50, 50), Scalar(10, 255, 255), mask1);
+      inRange(frame_HSV, Scalar(170, 50, 50), Scalar(179, 255, 255), mask2);
+      bitwise_or(mask1, mask2, frame_threshold);
+    }
+    else if (color == BLUE)
+    { cvtColor(im, frame_HSV, COLOR_BGR2HSV);
+      inRange(frame_HSV, Scalar(115, 50, 50), Scalar(125, 255, 255), frame_threshold);
+    }
     //cvtColor(frame_threshold, frameBGR, COLOR_GRAY2BGR);
     return frame_threshold;
 }
@@ -546,7 +578,7 @@ void find_floor(int color){
           currentMosaic = GOTO_CUBE;
         }
         else if (currentMosaic == FIND_MAGENTA_C){ 
-          sweap(1);
+          sweap(5);
           currentMosaic = FIND_YELLOW_C;
         }
         else if (currentMosaic == FIND_YELLOW_C){ 
@@ -563,6 +595,12 @@ void find_floor(int color){
         }
         else if (currentMosaic == FIND_YELLOW_CY){ 
           currentMosaic = FIND_RING;
+        }
+        else if (currentMosaic == FIND_MAGENTA_P){ 
+          currentMosaic = FIND_BALL;
+        }
+        else if (currentMosaic == FIND_MAGENTA_P2){ 
+          currentMosaic = FIND_RING_P;
         }
       }
     }
@@ -598,6 +636,12 @@ void follow_contour(vector<Point> contour){
       pick_object();
       currentMosaic = FIND_MAGENTA_CY;
     }
+    else if (currentMosaic == FIND_BALL) {
+      sweap(3.5);
+      set_velocity(0, 0);
+      pick_ball();
+      currentMosaic = FIND_MAGENTA_P2;
+    }
   }
 }
 
@@ -610,11 +654,6 @@ void find_object(){
     if (contours.size() == 0){
       set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
     }
-
-    // for (size_t i = 0; i < contours.size(); i++){
-    //   approxPolyDP(contours[i], approx, arcLength(contours[i], true)*0.005, true);
-    //   cout << i << "    " <<approx.size() << endl;
-    // }
     
     for (size_t i = 0; i < contours.size(); i++){
       if ( i == 2){break;}
@@ -637,6 +676,19 @@ void find_object(){
     
     cvtColor(out, frameBGR, COLOR_GRAY2BGR);
     display_image(frameBGR);
+}
+
+void find_path(){
+  sn_digital_value();
+  if (snDigitalValue[LEFT]){
+    sweap(15);
+    turn(LEFT);
+    sweap(6);
+    currentStage = DASH_LINE;
+  }
+  else{
+    follow_wall();
+  }
 }
 
 void follow_hole(vector<Point> contour){
@@ -672,6 +724,14 @@ void follow_hole(vector<Point> contour){
       sweap(3.8);
       sweap(-3.8);
       pull_up();
+      currentMosaic = FIND_MAGENTA_P;
+    }
+    else if (currentMosaic == FIND_RING_P)
+    { 
+      sweap(5);
+      turn(RIGHT);
+      find_path();
+      //currentMosaic = FIND_MAGENTA_P;
     }
     
   }
@@ -682,6 +742,10 @@ void find_hole(){
     Mat out = get_mask(frame, WHITE);
     vector<vector<Point>> contours = get_contours(out);
     vector<Point> approx;
+
+    if (contours.size() == 0){
+      set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
+    }
     
     for (size_t i = 0; i < contours.size(); i++){
       if (i == 3){break;}
@@ -689,19 +753,76 @@ void find_hole(){
       Rect minRect = boundingRect(contours[i]);
       //cout << i << "   "<< fabs((double)minRect.width / (double)minRect.height) << endl;
       if (fabs((double)minRect.width / (double)minRect.height) < 1.4){
-        if ((approx.size() < 10) && currentMosaic == FIND_SQUARE){
+        if ((approx.size() < 20) && currentMosaic == FIND_SQUARE){
           follow_hole(contours[i]);
+          //cout << i << "   "<< approx.size() << endl;
+          break;
+          
+        }
+        else if ((approx.size() >= 20) && currentMosaic == FIND_RING ){
+          follow_hole(contours[i]);
+          //cout << i << "   "<< approx.size() << endl;
+          break;
+          
+        }
+        else if ((approx.size() >= 20) && currentMosaic == FIND_RING_P){
+          follow_hole(contours[i]);
+          //cout << i << "   "<< approx.size() << endl;
+          break;
           //cout << i << "   "<< approx.size() << endl;
         }
-        else if ((approx.size() > 10) && currentMosaic == FIND_RING){
-          follow_hole(contours[i]);
-          //cout << i << "   "<< approx.size() << endl;
+        else{
+          set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
         }
       }
       
     }
     cvtColor(out, frameBGR, COLOR_GRAY2BGR);
     display_image(frameBGR);
+}
+
+void find_ball(){
+    Mat frame = get_image();
+    Mat out = get_mask(frame, BALL);
+    vector<vector<Point>> contours = get_contours(out);
+    Point2f center;
+    float radius;
+
+    if (contours.size() == 0){
+      set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
+    }
+    
+    for (size_t i = 0; i < contours.size(); i++){
+      if ( i == 2){break;}
+      minEnclosingCircle(contours[i], center, radius);
+      double conArea = fabs(contourArea(Mat(contours[i])));
+      double boundArea = 3.14 * radius * radius;
+
+      if ((boundArea / conArea) < 1.3 ){
+        follow_contour(contours[i]);
+        break;
+      }
+      else{
+        set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
+      }
+    }
+    cvtColor(out, frameBGR, COLOR_GRAY2BGR);
+    display_image(frameBGR);
+}
+
+void is_mosaic(){
+  Mat frame = get_image();
+  Mat out = get_mask(frame, MAGENTA);
+  vector<vector<Point>> contours = get_contours(out);
+  if (contours.size() != 0){
+    double y = get_centroid(contours[0]).y;
+    if (y > 320){
+      sweap(10);
+      currentStage = MOSAIC_AREA;
+    }
+  }
+  cvtColor(out, frameBGR, COLOR_GRAY2BGR);
+  display_image(frameBGR);
 }
 
 void mosaic_area(){
@@ -750,6 +871,22 @@ void mosaic_area(){
     case FIND_RING:
       find_hole();
       break;
+    
+    case FIND_MAGENTA_P:
+      find_floor(MAGENTA);
+      break;
+
+    case FIND_BALL:
+      find_ball();
+      break;
+
+    case FIND_MAGENTA_P2:
+      find_floor(MAGENTA);
+      break;
+
+    case FIND_RING_P:
+      find_hole();
+      break;
     }
 }
 ///////////////////////////////////MAIN/////////////////////////////////////////////////////////
@@ -777,14 +914,19 @@ int main(int argc, char **argv) {
 
     case WALL_FOLLOW:
       follow_maze();
+      is_mosaic();
       break;
 
     case MOSAIC_AREA:
       mosaic_area();
       break;
+    
+    case DASH_LINE:
+      follow_line();
+      break;
     }
 
-    //find_floor(CYAN);
+    // find_floor(CYAN);
     // if (t){
     // pick_object();
     // drop_object();
@@ -792,9 +934,6 @@ int main(int argc, char **argv) {
     // }
     
     //cout << currentMosaic << endl;
-    
-
-    
   
 
   };
