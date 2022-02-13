@@ -49,7 +49,7 @@ enum Stages
         MOSAIC_AREA,
         DASH_LINE
     };
-Stages currentStage = LINE_FOLLOW;
+Stages currentStage = DASH_LINE;
 
 // ////////////////////////////////////MOSAIC SUB-STAGES////////////////////////////////////////////////////
 
