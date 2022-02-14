@@ -932,7 +932,8 @@ int main(int argc, char **argv) {
     // drop_object();
     // t=0;
     // }
-    
+    //set_velocity(-10, -10);
+    //follow_line();
     //cout << currentMosaic << endl;
   
 
