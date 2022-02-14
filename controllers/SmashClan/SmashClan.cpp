@@ -47,9 +47,10 @@ enum Stages
         LINE_FOLLOW,
         WALL_FOLLOW,
         MOSAIC_AREA,
-        DASH_LINE
+        DASH_LINE,
+        SHOOTING
     };
-Stages currentStage = DASH_LINE;
+Stages currentStage = MOSAIC_AREA;
 
 // ////////////////////////////////////MOSAIC SUB-STAGES////////////////////////////////////////////////////
 
@@ -358,7 +359,8 @@ void pull_down(){
   { 
     currentPosition = servoEncoder->getValue();
     robot->step(TIME_STEP);
-  } while (fabs(currentPosition + 0.53 ) > DELTA);
+  } while (fabs(currentPosition + 0.53 ) > 0.01);
+  robot->step(TIME_STEP);
   
 }
 
@@ -371,7 +373,8 @@ void pull_up(){
   { 
     currentPosition = servoEncoder->getValue();
     robot->step(TIME_STEP);
-  } while (fabs(currentPosition - 1 ) > DELTA);
+  } while (fabs(currentPosition - 1 ) > 0.05);
+  robot->step(TIME_STEP);
 }
 
 void open_grabber(){
@@ -460,6 +463,10 @@ void pick_ball(){
 void drop_object(){
   pull_down();
   open_grabber();
+  if (currentMosaic == FIND_RING){
+    close_grabber(BALL_CLOSE);
+    open_grabber();
+  }
   sweap(-2.4);
   close_grabber(CMPL_CLOSE);
     //set_velocity(3, 3);
@@ -498,7 +505,7 @@ Mat get_mask(Mat im, int color){
     }
     else if (color == OBJ)
     { cvtColor(im, frame_HSV, COLOR_BGR2HSV);
-      inRange(frame_HSV, Scalar(20, 50, 50), Scalar(25, 255, 255), frame_threshold);
+      inRange(frame_HSV, Scalar(15, 50, 50), Scalar(25, 255, 255), frame_threshold);
     }
     else if (color == YELLOW)
     { cvtColor(im, frame_HSV, COLOR_BGR2HSV);
@@ -657,8 +664,8 @@ void find_object(){
     
     for (size_t i = 0; i < contours.size(); i++){
       if ( i == 2){break;}
-      approxPolyDP(contours[i], approx, arcLength(contours[i], true)*0.005, true);
-      //cout << i << "    " <<approx.size() << endl;
+      approxPolyDP(contours[i], approx, arcLength(contours[i], true)*0.003, true);
+      cout << i << "    " <<approx.size() << endl;
       if ((approx.size() <= 8) && (currentMosaic == GOTO_CUBE) && (fabs(contourArea(Mat(contours[i]))) > 500)){
         follow_contour(contours[i]);
         break;
@@ -825,6 +832,35 @@ void is_mosaic(){
   display_image(frameBGR);
 }
 
+bool is_junction(){
+  Mat frame = get_image();
+  Mat out = get_mask(frame, BLUE);
+  cvtColor(out, frameBGR, COLOR_GRAY2BGR);
+  display_image(frameBGR);
+  vector<vector<Point>> contours = get_contours(out);
+  if (contours.size() != 0){
+    if (fabs(contourArea(Mat(contours[0]))) > 25000){
+      read_ds();
+      if (dsDigitalValue[0] == 1){
+        return true;
+      }
+      
+    }
+  }
+  return false;
+}
+
+void red_path(){
+  // sweap(6);
+  // turn(LEFT);
+  follow_line();
+}
+
+void blue_path(){
+  sweap(20);
+  cout << "HI " << endl;
+}
+
 void mosaic_area(){
   switch (currentMosaic)
     {
@@ -922,14 +958,27 @@ int main(int argc, char **argv) {
       break;
     
     case DASH_LINE:
+      if (is_junction()) {
+         currentStage = SHOOTING;
+         break;
+      }
       follow_line();
+      break;
+
+    case SHOOTING:
+      if (BALL == RED){
+        red_path();
+      }
+      else{
+        blue_path();
+      }
       break;
     }
 
     // find_floor(CYAN);
     // if (t){
     // pick_object();
-    // drop_object();
+    //drop_object();
     // t=0;
     // }
     //set_velocity(-10, -10);
