@@ -22,9 +22,11 @@
 #define RIGHT 1
 #define LEFT 2
 #define CELL_WIDTH 10
-#define OBJ_CLOSE 0.003
+#define OBJ_CLOSE 0
 #define BALL_CLOSE 0.005
-#define CMPL_CLOSE 0.022
+#define CMPL_CLOSE 0.024
+#define CMPL_OPEN 0.02
+#define BALL_OPEN 0.001
 #define WIDTH 640
 #define HEIGHT 640
 #define CYAN 0
@@ -48,9 +50,11 @@ enum Stages
         WALL_FOLLOW,
         MOSAIC_AREA,
         DASH_LINE,
-        SHOOTING
+        SHOOTING,
+        KICKING,
+        FINISHED
     };
-Stages currentStage = MOSAIC_AREA;
+Stages currentStage = LINE_FOLLOW;
 
 // ////////////////////////////////////MOSAIC SUB-STAGES////////////////////////////////////////////////////
 
@@ -109,6 +113,8 @@ double servoValue;
 double rightLinearValue;
 double leftLinearValue;
 Mat frame, frame_HSV, frame_threshold, frameBGR;
+double mosaicError, veloCorrection;
+int temp = 1;
 
 
 
@@ -353,13 +359,13 @@ void initialize_servo(){
 void pull_down(){
   servo->setControlPID(2, 0, 0);
   servo->setVelocity(1);
-  servo->setPosition(-0.53);
+  servo->setPosition(-0.55);
   double currentPosition;
   do
   { 
     currentPosition = servoEncoder->getValue();
     robot->step(TIME_STEP);
-  } while (fabs(currentPosition + 0.53 ) > 0.01);
+  } while (fabs(currentPosition + 0.55 ) > 0.01);
   robot->step(TIME_STEP);
   
 }
@@ -377,13 +383,13 @@ void pull_up(){
   robot->step(TIME_STEP);
 }
 
-void open_grabber(){
+void open_grabber(double target){
   right_linear->setControlPID(2, 0, 0);
-  right_linear->setPosition(0.02);
+  right_linear->setPosition(target);
   right_linear->setVelocity(0.01);
 
   left_linear->setControlPID(2, 0, 0);
-  left_linear->setPosition(-0.02);
+  left_linear->setPosition(-target);
   left_linear->setVelocity(0.01);
   double currentPosition;
   do
@@ -391,7 +397,7 @@ void open_grabber(){
     currentPosition = rightLinearEncoder->getValue();
     robot->step(TIME_STEP);
     //cout << currentPosition << endl;
-  } while (fabs(currentPosition - 0.02 ) > 0.001);
+  } while (fabs(currentPosition - target ) > 0.002);
 }
 
 void close_grabber(double target){
@@ -404,7 +410,7 @@ void close_grabber(double target){
   left_linear->setVelocity(0.01);
 
   int time = 135;
-  if ((currentMosaic == GOTO_CUBE) || (currentMosaic == GOTO_CYLINDER)){
+  if ((currentMosaic == GOTO_CUBE) || (currentMosaic == GOTO_CYLINDER) || (currentMosaic == FIND_BALL)){
     time = 80;
   }
   for (int i = 0; i < time; i++){
@@ -442,8 +448,22 @@ void sweap(double x){
   set_velocity(0, 0);
 }
 
+void shoot(double x){
+  get_encoder_value();
+  double rightTarget = psValue[0] + x;
+  double leftTarget = psValue[1] + x;
+  double velo = MAX_SPEED;
+  set_velocity(velo, velo);
+  while (((rightTarget - psValue[0])> DELTA) || ((leftTarget - psValue[1]) > DELTA)){
+    //cout << rightTarget << "    " << psValue[0] << endl;
+    robot->step(TIME_STEP);
+    get_encoder_value();
+  }
+  set_velocity(0, 0);
+}
+
 void pick_object(){
-    open_grabber();
+    open_grabber(CMPL_OPEN);
     pull_down();
     sweap(4.5);
     close_grabber(OBJ_CLOSE);
@@ -452,7 +472,7 @@ void pick_object(){
 }
 
 void pick_ball(){
-    open_grabber();
+    open_grabber(CMPL_OPEN);
     pull_down();
     sweap(4.5);
     close_grabber(BALL_CLOSE);
@@ -462,11 +482,21 @@ void pick_ball(){
 
 void drop_object(){
   pull_down();
-  open_grabber();
+  open_grabber(CMPL_OPEN);
   if (currentMosaic == FIND_RING){
-    close_grabber(BALL_CLOSE);
-    open_grabber();
+    close_grabber(OBJ_CLOSE);
+    open_grabber(CMPL_OPEN);
   }
+  sweap(-2.4);
+  close_grabber(CMPL_CLOSE);
+    //set_velocity(3, 3);
+}
+
+void drop_ball(){
+  pull_down();
+  open_grabber(BALL_OPEN);
+  close_grabber(BALL_CLOSE);
+  open_grabber(CMPL_OPEN);
   sweap(-2.4);
   close_grabber(CMPL_CLOSE);
     //set_velocity(3, 3);
@@ -567,8 +597,12 @@ void find_floor(int color){
   }
   else{
     double x = get_centroid(contours[0]).x;
-    if ( (x < 280) || (x > 360)){
+    if ( (x < 310) || (x > 330)){
       set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
+      // mosaicError = x - 320;
+      // veloCorrection = 0.005 * mosaicError;
+
+      // set_velocity(MOSAIC_SPEED - veloCorrection, MOSAIC_SPEED + veloCorrection);
     }
     else{
       double y = get_centroid(contours[0]).y;
@@ -576,7 +610,10 @@ void find_floor(int color){
       double tresh = 50;
       if (color == MAGENTA){tresh = 500;}
       if ( y < tresh){
-        set_velocity(MOSAIC_SPEED, MOSAIC_SPEED);
+      mosaicError = x - 320;
+      veloCorrection = 0.005 * mosaicError;
+
+      set_velocity(MOSAIC_SPEED - veloCorrection, MOSAIC_SPEED + veloCorrection);
         //cout << y << endl;
       }
       else{
@@ -620,15 +657,11 @@ void follow_contour(vector<Point> contour){
   double x = get_centroid(contour).x;
   double y = get_centroid(contour).y;
   if (y < 320){
-    if (x < 300){
-      set_velocity(MOSAIC_SPEED*0.5, -MOSAIC_SPEED*0.5);
-    }
-    else if (x > 340){
-      set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
-    }
-    else{
-      set_velocity(MOSAIC_SPEED, MOSAIC_SPEED);
-    }
+      mosaicError = x - 320;
+      veloCorrection = 0.005 * mosaicError;
+      set_velocity(MOSAIC_SPEED - veloCorrection, MOSAIC_SPEED + veloCorrection);
+      //set_velocity(MOSAIC_SPEED, MOSAIC_SPEED);
+    
   }
   else{
     if (currentMosaic == GOTO_CUBE){
@@ -644,12 +677,65 @@ void follow_contour(vector<Point> contour){
       currentMosaic = FIND_MAGENTA_CY;
     }
     else if (currentMosaic == FIND_BALL) {
-      sweap(3.5);
+      sweap(4);
       set_velocity(0, 0);
       pick_ball();
       currentMosaic = FIND_MAGENTA_P2;
     }
   }
+}
+
+void find_cylinder(){
+  Mat frame = get_image();
+  Mat out = get_mask(frame, OBJ);
+  vector<vector<Point>> contours = get_contours(out);
+  vector<Point> approx;
+  if (contours.size() == 0){
+      set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
+  }
+  for (size_t i = 0; i < contours.size(); i++){
+      if ( i == 2){break;}
+      approxPolyDP(contours[i], approx, arcLength(contours[i], true)*0.003, true);
+      Rect minRect = boundingRect(contours[i]);
+      double aspectRatio = ((double)minRect.width / (double)minRect.height);
+      double areaRatio = ((double)minRect.width * (double)minRect.height) / fabs(contourArea(Mat(contours[i])));
+      //cout << (double)minRect.width / (double)minRect.height << "    " <<areaRatio << endl;
+      if (((double)minRect.width / (double)minRect.height < 1.5) && (areaRatio < 1.5) && (fabs(contourArea(Mat(contours[i]))) > 500)){
+        //cout <<  approx.size() << "  " << aspectRatio << endl;
+        double x = get_centroid(contours[i]).x;
+        double y = get_centroid(contours[i]).y;
+        if (y < 350){
+          if ((x > 300) && (x <340)){
+            mosaicError = x - 320;
+            veloCorrection = 0.005 * mosaicError;
+            set_velocity(MOSAIC_SPEED - veloCorrection, MOSAIC_SPEED + veloCorrection);
+          }
+          else{
+            set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
+          }
+          
+          //set_velocity(MOSAIC_SPEED, MOSAIC_SPEED);
+        }
+        else if ((x > 310) && (x <330)){
+          if (aspectRatio < 0.9){
+            cout << aspectRatio <<"  "<<  y << endl;
+            sweap(6);
+            set_velocity(0, 0);
+            pick_object();
+            currentMosaic = FIND_MAGENTA_CY;
+          }
+          else{
+            turn(LEFT);
+            sweap(6);
+          }
+        }
+      }
+      else{
+        set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
+      }
+  }
+  cvtColor(out, frameBGR, COLOR_GRAY2BGR);
+  display_image(frameBGR);
 }
 
 void find_object(){
@@ -664,13 +750,9 @@ void find_object(){
     
     for (size_t i = 0; i < contours.size(); i++){
       if ( i == 2){break;}
-      approxPolyDP(contours[i], approx, arcLength(contours[i], true)*0.003, true);
+      approxPolyDP(contours[i], approx, arcLength(contours[i], true)*0.005, true);
       cout << i << "    " <<approx.size() << endl;
-      if ((approx.size() <= 8) && (currentMosaic == GOTO_CUBE) && (fabs(contourArea(Mat(contours[i]))) > 500)){
-        follow_contour(contours[i]);
-        break;
-      }
-      else if ((approx.size() > 8) && (currentMosaic == GOTO_CYLINDER) && (fabs(contourArea(Mat(contours[i]))) > 500)){
+      if ((approx.size() <= 10) && (currentMosaic == GOTO_CUBE) && (fabs(contourArea(Mat(contours[i]))) > 500)){
         follow_contour(contours[i]);
         break;
       }
@@ -702,20 +784,24 @@ void follow_hole(vector<Point> contour){
   double x = get_centroid(contour).x;
   double y = get_centroid(contour).y;
   if ((y < 350)){
+
+    mosaicError = x - 320;
+    veloCorrection = 0.005 * mosaicError;
+    set_velocity(MOSAIC_SPEED - veloCorrection, MOSAIC_SPEED + veloCorrection);
     //cout << y << endl;
-    if ((50 < x) && (x < 315)){
-      set_velocity(MOSAIC_SPEED*0.5, -MOSAIC_SPEED*0.5);
-    }
-    else if ((x > 325) && (x < 600)){
-      set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
-    }
-    else{
-      set_velocity(MOSAIC_SPEED, MOSAIC_SPEED);
-    }
+    // if ((50 < x) && (x < 315)){
+    //   set_velocity(MOSAIC_SPEED*0.5, -MOSAIC_SPEED*0.5);
+    // }
+    // else if ((x > 325) && (x < 600)){
+    //   set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
+    // }
+    // else{
+    //   set_velocity(MOSAIC_SPEED, MOSAIC_SPEED);
+    // }
   }
   else{
     if (currentMosaic == FIND_SQUARE){
-      sweap(3);
+      sweap(3.9);
       set_velocity(0, 0);
       drop_object();
       sweap(3);
@@ -725,11 +811,11 @@ void follow_hole(vector<Point> contour){
     }
     else if (currentMosaic == FIND_RING)
     {
-      sweap(3);
+      sweap(4.5);
       set_velocity(0, 0);
       drop_object();
-      sweap(3.8);
-      sweap(-3.8);
+      sweap(3.4);
+      sweap(-3.4);
       pull_up();
       currentMosaic = FIND_MAGENTA_P;
     }
@@ -769,8 +855,7 @@ void find_hole(){
         else if ((approx.size() >= 20) && currentMosaic == FIND_RING ){
           follow_hole(contours[i]);
           //cout << i << "   "<< approx.size() << endl;
-          break;
-          
+          break;  
         }
         else if ((approx.size() >= 20) && currentMosaic == FIND_RING_P){
           follow_hole(contours[i]);
@@ -823,8 +908,8 @@ void is_mosaic(){
   vector<vector<Point>> contours = get_contours(out);
   if (contours.size() != 0){
     double y = get_centroid(contours[0]).y;
-    if (y > 320){
-      sweap(10);
+    if ((y > 320) && (fabs(contourArea(Mat(contours[0]))) > 30000)){
+      sweap(15);
       currentStage = MOSAIC_AREA;
     }
   }
@@ -850,15 +935,40 @@ bool is_junction(){
   return false;
 }
 
+void is_white_line(){
+  read_ds();
+  if ((dsDigitalValue[0]) & (dsDigitalValue[1]) & (dsDigitalValue[2]) & (dsDigitalValue[3]) & (dsDigitalValue[4]) & (dsDigitalValue[5]) & (dsDigitalValue[6])){
+    set_velocity(0, 0);
+    if (BALL == RED){
+      move_specific_distance(-0.8, 0.8);
+      currentStage = KICKING;
+    }
+    else{
+      move_specific_distance(0.85, -0.85);
+      currentStage = KICKING;
+    }
+
+  }
+}
+
 void red_path(){
-  // sweap(6);
-  // turn(LEFT);
+  if (temp == 1){
+    sweap(5.1);
+    turn(LEFT);
+    temp = 0;
+  }
   follow_line();
+  is_white_line();
 }
 
 void blue_path(){
-  sweap(20);
-  cout << "HI " << endl;
+  if (temp == 1){
+    sweap(20);
+    move_specific_distance(2.9, -2.9);
+    set_velocity(SPEED, SPEED);
+    temp = 0;
+  }
+  is_white_line();
 }
 
 void mosaic_area(){
@@ -893,7 +1003,7 @@ void mosaic_area(){
       break;
     
     case GOTO_CYLINDER:
-      find_object();
+      find_cylinder();
       break;
 
     case FIND_MAGENTA_CY:
@@ -973,11 +1083,23 @@ int main(int argc, char **argv) {
         blue_path();
       }
       break;
+    
+    case KICKING:
+      set_velocity(0, 0);
+      drop_ball();
+      shoot(6);
+      currentStage = FINISHED;
+      break;
+    
+    case FINISHED:
+      break;
+
     }
 
+    
     // find_floor(CYAN);
     // if (t){
-    // pick_object();
+    //pick_object();
     //drop_object();
     // t=0;
     // }
