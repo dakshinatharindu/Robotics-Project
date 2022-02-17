@@ -9,7 +9,7 @@
 #include <opencv2/core/core.hpp>
 #include <opencv2/imgproc/imgproc.hpp>
 
-#define TIME_STEP 32
+#define TIME_STEP 16
 #define MAX_SPEED 10
 #define LINE_TROSHOLD 446
 #define WALL_TRESHOLD 690
@@ -38,6 +38,7 @@
 #define RED 5
 #define BLUE 6
 #define BALL BLUE
+#define TEMP_BALL 7
 
 using namespace webots;
 using namespace std;
@@ -418,9 +419,9 @@ void close_grabber(double target){
   left_linear->setPosition(target);
   left_linear->setVelocity(0.01);
 
-  int time = 135;
+  int time = 270;
   if ((currentMosaic == GOTO_CUBE) || (currentMosaic == GOTO_CYLINDER) || (currentMosaic == FIND_BALL)){
-    time = 80;
+    time = 160;
   }
   for (int i = 0; i < time; i++){
     robot->step(TIME_STEP);
@@ -494,9 +495,11 @@ void pick_ball(){
 
 void drop_object(){
   pull_down();
-  open_grabber(CMPL_OPEN);
+  open_grabber(OBJ_OPEN);
   if (currentMosaic == FIND_RING){
+    move_distance(-1);
     close_grabber(OBJ_CLOSE);
+    move_distance(1);
     open_grabber(CMPL_OPEN);
   }
   move_distance(-2.4);
@@ -513,6 +516,15 @@ void drop_ball(){
   close_grabber(CMPL_CLOSE);
     //set_velocity(3, 3);
 }
+
+void drop_wrong_ball(){
+  pull_down();
+  open_grabber(BALL_OPEN);
+  pull_up();
+  close_grabber(CMPL_CLOSE);
+    //set_velocity(3, 3);
+}
+
 
 
 ///////////////////////////////////CAMERA/////////////////////////////////////////////////////////
@@ -571,6 +583,15 @@ Mat get_mask(Mat im, int color){
     else if (color == BLUE)
     { cvtColor(im, frame_HSV, COLOR_BGR2HSV);
       inRange(frame_HSV, Scalar(115, 30, 30), Scalar(125, 255, 255), frame_threshold);
+    }
+    else if (color == TEMP_BALL)
+    { Mat mask1, mask2, mask3, mask4;
+      cvtColor(im, frame_HSV, COLOR_BGR2HSV);
+      inRange(frame_HSV, Scalar(0, 20, 20), Scalar(10, 255, 255), mask1);
+      inRange(frame_HSV, Scalar(170, 20, 20), Scalar(179, 255, 255), mask2);
+      bitwise_or(mask1, mask2, mask3);
+      inRange(frame_HSV, Scalar(115, 30, 30), Scalar(125, 255, 255), mask4);
+      bitwise_or(mask3, mask4, frame_threshold);
     }
     //cvtColor(frame_threshold, frameBGR, COLOR_GRAY2BGR);
     return frame_threshold;
@@ -738,7 +759,7 @@ void find_cylinder(){
           //set_velocity(MOSAIC_SPEED, MOSAIC_SPEED);
         }
         else if ((x > 300) && (x <340)){
-          if (aspectRatio < 0.9){
+          if ((aspectRatio < 1) && (approx.size() > 8)){
             //cout << aspectRatio <<"  "<<  y << endl;
             move_distance(5);
             set_velocity(0, 0);
@@ -920,8 +941,8 @@ void follow_hole(vector<Point> contour){
       move_distance(4.5);
       set_velocity(0, 0);
       drop_object();
-      move_distance(3.4);
-      move_distance(-3.4);
+      move_distance(3);
+      move_distance(-3);
       pull_up();
       currentMosaic = FIND_MAGENTA_P;
     }
@@ -1006,6 +1027,74 @@ void find_ball(){
     }
     cvtColor(out, frameBGR, COLOR_GRAY2BGR);
     display_image(frameBGR);
+}
+
+// double get_areaRatio(vector<Point> contour){
+//   double conArea = fabs(contourArea(Mat(contour)));
+//   double boundArea = 3.14 * radius * radius;
+//   return boundArea / conArea;
+// }
+
+void find_close_ball(){
+  Mat frame = get_image();
+  Mat out = get_mask(frame, TEMP_BALL);
+  vector<vector<Point>> contours = get_contours(out);
+  Point2f center;
+  float radius;
+
+  if (contours.size() == 0){
+    set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
+  }
+  
+  for (size_t i = 0; i < contours.size(); i++){
+    if ( i == 2){break;}
+    minEnclosingCircle(contours[i], center, radius);
+    double conArea = fabs(contourArea(Mat(contours[i])));
+    double boundArea = 3.14 * radius * radius;
+
+    if ((boundArea / conArea) < 1.3 ){
+      double x = get_centroid(contours[i]).x;
+      double y = get_centroid(contours[i]).y;
+      if (y < 320){
+        mosaicError = x - 320;
+        veloCorrection = 0.005 * mosaicError;
+        set_velocity(MOSAIC_SPEED - veloCorrection, MOSAIC_SPEED + veloCorrection);
+        //set_velocity(MOSAIC_SPEED, MOSAIC_SPEED);
+      }
+      else{
+        set_velocity(0, 0);
+        //cout << fabs(contourArea(Mat(contours[i]))) << endl;
+        Mat frame1 = get_image();
+        Mat out1 = get_mask(frame1, BALL);
+        vector<vector<Point>> con = get_contours(out1);
+        if (con.size() != 0){
+          if (fabs(contourArea(Mat(con[0]))) > 9000){
+            move_distance(4);
+            set_velocity(0, 0);
+            pick_ball();
+            currentMosaic = FIND_MAGENTA_P2;
+            break;
+          }
+        }
+        move_distance(4);
+        set_velocity(0, 0);
+        pick_ball();
+        turn(RIGHT); turn(RIGHT);
+        drop_wrong_ball();
+        turn(RIGHT);
+      }
+      break;
+    }
+    else{
+      set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
+    }
+  }
+
+
+
+  cvtColor(out, frameBGR, COLOR_GRAY2BGR);
+  display_image(frameBGR);
+
 }
 
 void is_mosaic(){
@@ -1129,7 +1218,7 @@ void mosaic_area(){
       break;
 
     case FIND_BALL:
-      find_ball();
+      find_close_ball();
       break;
 
     case FIND_MAGENTA_P2:
@@ -1205,7 +1294,7 @@ int main(int argc, char **argv) {
 
     }
 
-    
+    //find_close_ball();
     // find_floor(CYAN);
     // if (t){
     // turn(RIGHT);
