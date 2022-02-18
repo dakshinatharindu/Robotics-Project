@@ -38,7 +38,7 @@
 #define TEMP_BALL 7
 #define RED 5
 #define BLUE 6
-#define BALL RED
+#define BALL BLUE
 
 
 using namespace webots;
