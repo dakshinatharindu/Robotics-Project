@@ -35,10 +35,11 @@
 #define YELLOW 2
 #define MAGENTA 3
 #define WHITE 4
+#define TEMP_BALL 7
 #define RED 5
 #define BLUE 6
-#define BALL BLUE
-#define TEMP_BALL 7
+#define BALL RED
+
 
 using namespace webots;
 using namespace std;
@@ -264,7 +265,7 @@ void turn(int dir){
 void sn_digital_value(){
   read_sn();
   for (int i = 0; i<3; i++){
-    if (snValue[i] > 350){
+    if (snValue[i] > 400){
       snDigitalValue[i] = true;
     }
     else{
@@ -632,6 +633,7 @@ void find_floor(int color){
     double x = get_centroid(contours[0]).x;
     double treshold = 10;
     if (color == CYAN){treshold = 10;}
+    if (currentMosaic == FIND_MAGENTA_P2){treshold = 20;}
     if ( (x < (320 - treshold)) || (x > (320 + treshold))){
       set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
       // mosaicError = x - 320;
@@ -653,7 +655,7 @@ void find_floor(int color){
       }
       else{
         set_velocity(0, 0);
-        if (currentMosaic == FIND_CYAN){ 
+        if (currentMosaic == FIND_CYAN){
           currentMosaic = GOTO_CUBE;
         }
         else if (currentMosaic == FIND_MAGENTA_C){ 
@@ -1105,6 +1107,7 @@ void is_mosaic(){
     double y = get_centroid(contours[0]).y;
     if ((y > 320) && (fabs(contourArea(Mat(contours[0]))) > 30000)){
       move_distance(15);
+      move_specific_distance(2, -2);
       currentStage = MOSAIC_AREA;
     }
   }
@@ -1248,7 +1251,7 @@ int main(int argc, char **argv) {
     case LINE_FOLLOW:
       follow_line();
       sn_digital_value();
-      if (snDigitalValue[LEFT]){
+      if ((snDigitalValue[LEFT]) || (snDigitalValue[RIGHT])){
         currentStage = WALL_FOLLOW;
         initialize_wall_PID();
       }
