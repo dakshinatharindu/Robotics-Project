@@ -996,6 +996,9 @@ void find_hole(){
           set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
         }
       }
+      else{
+          set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
+        }
       
     }
     cvtColor(out, frameBGR, COLOR_GRAY2BGR);
@@ -1105,10 +1108,12 @@ void is_mosaic(){
   vector<vector<Point>> contours = get_contours(out);
   if (contours.size() != 0){
     double y = get_centroid(contours[0]).y;
-    if ((y > 320) && (fabs(contourArea(Mat(contours[0]))) > 30000)){
+    if ((y > 320) && (fabs(contourArea(Mat(contours[0]))) > 20000)){
+      //cout << "T" << endl;
       move_distance(15);
       move_specific_distance(2, -2);
       currentStage = MOSAIC_AREA;
+      
     }
   }
   cvtColor(out, frameBGR, COLOR_GRAY2BGR);

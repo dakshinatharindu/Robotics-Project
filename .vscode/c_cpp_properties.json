@@ -4,7 +4,7 @@
             "name": "Win32",
             "includePath": [
                 "${workspaceFolder}/**",
-                "${WEBOTS_HOME}/include/controller/cpp"//,
+                "${WEBOTS_HOME}/include/controller/cpp" //,
                 //"${OPENCV_DIR}/include"
             ],
             "defines": [
@@ -12,7 +12,7 @@
                 "UNICODE",
                 "_UNICODE"
             ],
-            "compilerPath": "C:\\MinGW\\bin\\gcc.exe",
+            "compilerPath": "C:/mingw64/bin/gcc.exe",
             "cStandard": "gnu17",
             "cppStandard": "gnu++14",
             "intelliSenseMode": "windows-gcc-x86"
