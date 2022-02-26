@@ -10,11 +10,11 @@
 #include <opencv2/imgproc/imgproc.hpp>
 
 #define TIME_STEP 16
-#define MAX_SPEED 10
+#define MAX_SPEED 20
 #define LINE_TROSHOLD 446
 #define WALL_TRESHOLD 690
 #define DELTA 0.1
-#define SPEED 5
+#define SPEED 8
 #define TURN90 5.69
 #define TURN_SPEED 2
 #define MOSAIC_SPEED 5
@@ -25,7 +25,7 @@
 #define OBJ_CLOSE 0
 #define BALL_CLOSE 0.005
 #define CMPL_CLOSE 0.024
-#define CMPL_OPEN 0.02
+#define CMPL_OPEN 0.016
 #define OBJ_OPEN 0.005
 #define BALL_OPEN 0.001
 #define WIDTH 640
@@ -119,6 +119,7 @@ Mat frame, frame_HSV, frame_threshold, frameBGR;
 double mosaicError, veloCorrection;
 int temp = 1;
 int cylinder_pos = LEFT;
+int temp_2 = 1;
 
 
 
@@ -193,7 +194,7 @@ void read_sn(){
 
 void initialize_PID(){
   kp = 1;            //2
-  ki = 0.05;
+  ki = 0;
   kd = 0.5;            //1
   previousError = 0.0;
   accumulateError = 0.0;
@@ -442,7 +443,7 @@ void move_distance(double x){
   double leftTarget = psValue[1] + x;
   double velo = SPEED;
   if ((currentMosaic == GOTO_CUBE) || (currentMosaic == GOTO_CYLINDER) || (currentMosaic == FIND_BALL) || (currentMosaic == FIND_SQUARE) || (currentMosaic == FIND_RING)){
-    velo = 1.5;
+    velo = 3;
   }
   if (x > 0){
     set_velocity(velo, velo);
@@ -646,7 +647,11 @@ void find_floor(int color){
       //cout << y << endl;
       double tresh = 50;
       if (color == MAGENTA){tresh = 500;}
+      if (currentMosaic == FIND_MAGENTA_P){tresh = 600;}
+      if ((currentMosaic == FIND_MAGENTA_RESET) && (cylinder_pos == LEFT)){tresh = 400;}
+      else if ((currentMosaic == FIND_MAGENTA_RESET) && (cylinder_pos == RIGHT)){tresh = 600;}
       if ( y < tresh){
+        //cout << y << endl;
       mosaicError = x - 320;
       veloCorrection = 0.005 * mosaicError;
 
@@ -1073,20 +1078,28 @@ void find_close_ball(){
         Mat out1 = get_mask(frame1, BALL);
         vector<vector<Point>> con = get_contours(out1);
         if (con.size() != 0){
-          if (fabs(contourArea(Mat(con[0]))) > 9000){
+          double xx = get_centroid(con[i]).x;
+          //cout << xx << endl;
+          if ((fabs(contourArea(Mat(con[0]))) > 9000) && (xx > 310) && (xx < 330)){
             move_distance(4);
             set_velocity(0, 0);
             pick_ball();
             currentMosaic = FIND_MAGENTA_P2;
             break;
           }
+          else if (temp_2 == 1){
+            move_distance(4);
+            set_velocity(0, 0);
+            pick_ball();
+            turn(RIGHT); turn(RIGHT);
+            drop_wrong_ball();
+            turn(RIGHT);
+            temp_2 = 0;
+          }
+          else{
+            set_velocity(-MOSAIC_SPEED*0.5, MOSAIC_SPEED*0.5);
+          }
         }
-        move_distance(4);
-        set_velocity(0, 0);
-        pick_ball();
-        turn(RIGHT); turn(RIGHT);
-        drop_wrong_ball();
-        turn(RIGHT);
       }
       break;
     }
@@ -1143,7 +1156,7 @@ void is_white_line(){
   if ((dsDigitalValue[0]) & (dsDigitalValue[1]) & (dsDigitalValue[2]) & (dsDigitalValue[3]) & (dsDigitalValue[4]) & (dsDigitalValue[5]) & (dsDigitalValue[6])){
     set_velocity(0, 0);
     if (BALL == RED){
-      move_specific_distance(-0.8, 0.8);
+      move_specific_distance(-0.85, 0.85);
       currentStage = KICKING;
     }
     else{
@@ -1257,6 +1270,7 @@ int main(int argc, char **argv) {
       follow_line();
       sn_digital_value();
       if ((snDigitalValue[LEFT]) || (snDigitalValue[RIGHT])){
+        move_specific_distance(0.8, 0.8);
         currentStage = WALL_FOLLOW;
         initialize_wall_PID();
       }
